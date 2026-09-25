@@ -130,7 +130,7 @@ jobs:
       # 9. Upload review artifact (for debugging / audit trail)
       # -----------------------------------------------------------------------
       - name: Upload review artifact
-        if: always()
+        if: always() && steps.pr-meta.outputs.pr_number != ''
         uses: actions/upload-artifact@v4
         with:
           name: pr-pilot-review-${{ steps.pr-meta.outputs.pr_number }}
