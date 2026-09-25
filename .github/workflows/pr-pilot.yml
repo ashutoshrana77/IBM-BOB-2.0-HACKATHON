@@ -6,7 +6,7 @@
 name: PR Pilot Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     branches: [master]
   workflow_dispatch:
@@ -18,7 +18,7 @@ on:
 
 # Prevent concurrent runs on the same PR (cancel previous run if new commit pushed)
 concurrency:
-  group: pr-pilot-${{ github.event.pull_request.number }}
+  group: pr-pilot-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 permissions:
@@ -39,7 +39,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.event.pull_request.base.sha }}
           fetch-depth: 0   # Full history needed for git diff between base and head
 
       # -----------------------------------------------------------------------
@@ -93,7 +93,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
             echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
             echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
             echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
@@ -103,6 +103,12 @@ jobs:
             echo "base_sha=$(echo "$PR_JSON" | jq -r '.base.sha')" >> "$GITHUB_OUTPUT"
             echo "head_sha=$(echo "$PR_JSON" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
           fi
+
+      # Fetch only the PR's git object; never check out or execute PR code.
+      - name: Fetch pull request diff commit
+        env:
+          PR_NUMBER: ${{ steps.pr-meta.outputs.pr_number }}
+        run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
 
       # -----------------------------------------------------------------------
       # 8. Run PR Pilot review
