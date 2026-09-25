@@ -108,27 +108,22 @@ DIFF_CONTENT=$(cat "${DIFF_FILE}")
 PROMPT_TEMPLATE=$(cat "${PROJECT_ROOT}/prompts/main-agent.md")
 
 # Perform substitutions using Python for safe multiline handling
-python3 - <<PYEOF > "${PROMPT_FILE}"
-import sys
+PR_TITLE="${PR_TITLE}" PR_DESCRIPTION="${PR_DESCRIPTION}" \
+DESIGN_DOC_PATH="${DESIGN_DOC_PATH}" PR_NUMBER="${PR_NUMBER}" \
+PROJECT_ROOT="${PROJECT_ROOT}" DIFF_FILE="${DIFF_FILE}" \
+python3 - <<'PYEOF' > "${PROMPT_FILE}"
+import os
+from pathlib import Path
 
-template = open("${PROJECT_ROOT}/prompts/main-agent.md").read()
-diff = open("${DIFF_FILE}").read()
-
-design_doc = ""
-design_doc_path = "${DESIGN_DOC_PATH}"
-if design_doc_path:
-    design_doc = design_doc_path
-
-pr_description = """${PR_DESCRIPTION}"""
-
+template = (Path(os.environ["PROJECT_ROOT"]) / "prompts/main-agent.md").read_text()
+diff = Path(os.environ["DIFF_FILE"]).read_text()
 result = template.replace("{{DIFF_CONTENT}}", diff)
-result = result.replace("{{DESIGN_DOC_PATH}}", design_doc)
-result = result.replace("{{PR_NUMBER}}", "${PR_NUMBER}")
-result = result.replace("{{PR_TITLE}}", """${PR_TITLE}""")
-result = result.replace("{{PR_DESCRIPTION}}", pr_description)
+result = result.replace("{{DESIGN_DOC_PATH}}", os.environ.get("DESIGN_DOC_PATH", ""))
+result = result.replace("{{PR_NUMBER}}", os.environ["PR_NUMBER"])
+result = result.replace("{{PR_TITLE}}", os.environ.get("PR_TITLE", ""))
+result = result.replace("{{PR_DESCRIPTION}}", os.environ.get("PR_DESCRIPTION", ""))
 result = result.replace("{{ACCEPTANCE_CRITERIA}}", "")
 result = result.replace("{{CHANGED_FILES}}", diff[:2000])
-
 print(result)
 PYEOF
 
@@ -145,18 +140,14 @@ echo "[PR Pilot] Running Bob Shell review (pr-reviewer mode)..."
 # Set the working directory to the repo root so Bob can use context mentions
 cd "${PROJECT_ROOT}"
 
-"${BOB_CMD}" \
-  --chat-mode=pr-reviewer \
-  --print "$(cat "${PROMPT_FILE}")" \
-  > "${OUTPUT_FILE}" 2>&1
+"${BOB_CMD}" --accept-license >/dev/null
 
-EXIT_CODE=$?
-
-if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "[PR Pilot] ERROR: Bob Shell exited with code ${EXIT_CODE}" >&2
+if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" run --mode pr-reviewer --trust \
+  < "${PROMPT_FILE}" > "${OUTPUT_FILE}" 2>&1; then
+  echo "[PR Pilot] ERROR: Bob Shell review failed. Output follows:" >&2
   echo "[PR Pilot] Output:" >&2
   cat "${OUTPUT_FILE}" >&2
-  exit "${EXIT_CODE}"
+  exit 1
 fi
 
 echo "[PR Pilot] Review generated: ${OUTPUT_FILE}"

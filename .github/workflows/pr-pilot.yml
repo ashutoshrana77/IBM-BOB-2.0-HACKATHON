@@ -6,16 +6,19 @@
 name: PR Pilot Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
-    branches:
-      - main
-      - master
-      - develop
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to review
+        required: true
+        type: number
 
 # Prevent concurrent runs on the same PR (cancel previous run if new commit pushed)
 concurrency:
-  group: pr-pilot-${{ github.event.pull_request.number }}
+  group: pr-pilot-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 permissions:
@@ -36,31 +39,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.event.pull_request.base.sha }}
           fetch-depth: 0   # Full history needed for git diff between base and head
 
       # -----------------------------------------------------------------------
-      # 2. Set up Node.js (required for the webhook server / Bob Shell)
+      # 2. Set up Node.js (Bob Shell 2 requires Node.js 24 or later)
       # -----------------------------------------------------------------------
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       # -----------------------------------------------------------------------
-      # 3. Install Bob Shell
+      # 3. Verify the required inference credential before doing any setup
+      # -----------------------------------------------------------------------
+      - name: Check Bob API key
+        env:
+          BOB_API_KEY: ${{ secrets.BOB_API_KEY }}
+        run: |
+          if [ -z "$BOB_API_KEY" ]; then
+            echo "::error::Repository secret BOB_API_KEY is missing. Add an IBM Bob API key with Inference scope under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------------
+      # 4. Install Bob Shell using IBM's official installer (not an npm registry package)
       # -----------------------------------------------------------------------
       - name: Install Bob Shell
-        run: npm install -g @ibm/bob-shell
-        continue-on-error: false
+        run: curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --package-manager npm
 
       # -----------------------------------------------------------------------
-      # 4. Verify Bob Shell installation
+      # 5. Verify Bob Shell installation
       # -----------------------------------------------------------------------
       - name: Verify Bob Shell
         run: bob --version
 
       # -----------------------------------------------------------------------
-      # 5. Make scripts executable
+      # 6. Make scripts executable
       # -----------------------------------------------------------------------
       - name: Make scripts executable
         run: |
@@ -68,18 +83,35 @@ jobs:
           chmod +x ./scripts/post-comment.sh
 
       # -----------------------------------------------------------------------
-      # 6. Extract PR metadata
+      # 7. Extract PR metadata
       # -----------------------------------------------------------------------
       - name: Extract PR metadata
         id: pr-meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
-          echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          echo "pr_title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            PR_JSON=$(gh api "repos/$REPOSITORY/pulls/$INPUT_PR_NUMBER")
+            echo "pr_number=$INPUT_PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "base_sha=$(echo "$PR_JSON" | jq -r '.base.sha')" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$(echo "$PR_JSON" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fetch only the PR's git object; never check out or execute PR code.
+      - name: Fetch pull request diff commit
+        env:
+          PR_NUMBER: ${{ steps.pr-meta.outputs.pr_number }}
+        run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
 
       # -----------------------------------------------------------------------
-      # 7. Run PR Pilot review
+      # 8. Run PR Pilot review
       # -----------------------------------------------------------------------
       - name: Run PR Pilot Review
         id: review
@@ -95,7 +127,7 @@ jobs:
             "${{ steps.pr-meta.outputs.head_sha }}"
 
       # -----------------------------------------------------------------------
-      # 8. Upload review artifact (for debugging / audit trail)
+      # 9. Upload review artifact (for debugging / audit trail)
       # -----------------------------------------------------------------------
       - name: Upload review artifact
         if: always()
@@ -106,7 +138,7 @@ jobs:
           retention-days: 30
 
       # -----------------------------------------------------------------------
-      # 9. Fail the CI check if critical findings were detected
+      # 10. Fail the CI check if critical findings were detected
       #    (review.sh exits with code 1 when critical findings exist)
       # -----------------------------------------------------------------------
       - name: Check for critical findings

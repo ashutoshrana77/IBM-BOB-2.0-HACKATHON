@@ -115,9 +115,11 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 
 | Secret | Description |
 |--------|-------------|
-| `BOB_API_KEY` | IBM Bob API key |
+| `BOB_API_KEY` | IBM Bob Shell API key with **Inference** scope |
 
 The `GITHUB_TOKEN` secret is automatically provided by GitHub Actions.
+
+Add `BOB_API_KEY` under **Settings → Secrets and variables → Actions → New repository secret**. Without it, the workflow stops with a clear setup error before attempting a review. You can also run **PR Pilot Review** manually from the Actions tab by entering an open pull request number.
 
 ### 4. Configure environment variables (for webhook server)
 
