@@ -11,7 +11,7 @@ const crypto = require('crypto');
  * @returns {boolean} true if the signature is valid
  */
 function verifyWebhookSignature(secret, signature, payload) {
-  if (!signature || !signature.startsWith('sha256=')) {
+  if (!secret || !signature || !signature.startsWith('sha256=')) {
     return false;
   }
 

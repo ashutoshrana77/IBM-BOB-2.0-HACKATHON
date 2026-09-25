@@ -26,6 +26,10 @@ describe('verifyWebhookSignature', () => {
     expect(verifyWebhookSignature(secret, null, payload)).toBe(false);
   });
 
+  test('returns false when the webhook secret is missing', () => {
+    expect(verifyWebhookSignature(undefined, makeSignature(payload), payload)).toBe(false);
+  });
+
   test('returns false when signature has wrong prefix', () => {
     const sig = 'sha1=' + crypto.createHmac('sha1', secret).update(payload).digest('hex');
     expect(verifyWebhookSignature(secret, sig, payload)).toBe(false);

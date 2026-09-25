@@ -4,12 +4,17 @@
  * Validates required environment variables on startup.
  * Throws an error with a clear message if any are missing.
  */
-function validateEnvironment() {
-  const required = [
+const required = [
     { key: 'GITHUB_TOKEN', description: 'GitHub personal access token with repo scope' },
     { key: 'GITHUB_REPO', description: 'GitHub repository in owner/repo format (e.g., acme/library-app)' },
     { key: 'GITHUB_WEBHOOK_SECRET', description: 'GitHub webhook secret for signature verification' }
-  ];
+];
+
+function getMissingEnvironment() {
+  return required.filter(({ key }) => !process.env[key]);
+}
+
+function validateEnvironment() {
 
   const optional = [
     { key: 'BOB_SHELL_PATH', description: 'Path to bob executable', default: 'bob' },
@@ -19,7 +24,7 @@ function validateEnvironment() {
     { key: 'REPO_CLONE_PATH', description: 'Local path where the repository is cloned for diff generation', default: '/tmp/pr-pilot-repo' }
   ];
 
-  const missing = required.filter(({ key }) => !process.env[key]);
+  const missing = getMissingEnvironment();
 
   if (missing.length > 0) {
     const details = missing.map(({ key, description }) => `  - ${key}: ${description}`).join('\n');
@@ -34,4 +39,4 @@ function validateEnvironment() {
   }
 }
 
-module.exports = { validateEnvironment };
+module.exports = { getMissingEnvironment, validateEnvironment };

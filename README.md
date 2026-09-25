@@ -161,6 +161,17 @@ Configure GitHub to send webhooks to `http://your-server:3000/webhook`.
 
 Set the webhook content type to `application/json` and add the same `GITHUB_WEBHOOK_SECRET` you configured in `.env`.
 
+### Option C — Vercel deployment
+
+The Node service can be deployed from the `server` directory. The public endpoints are:
+
+- `GET /` — service status and endpoint links
+- `GET /health` — liveness and missing-configuration report
+- `GET /health/ready` — readiness (`200` when configured, `503` when required settings are missing)
+- `POST /webhook` — GitHub pull-request webhook (requires a valid `X-Hub-Signature-256`)
+
+Configure `GITHUB_TOKEN`, `GITHUB_REPO`, and `GITHUB_WEBHOOK_SECRET` in the Vercel project's environment variables before enabling the webhook. The separate GitHub Actions flow remains the recommended way to run reviews that invoke Bob Shell; serverless functions are not a persistent host for the background review process.
+
 ### Option C — Manual / local (for testing)
 
 ```bash

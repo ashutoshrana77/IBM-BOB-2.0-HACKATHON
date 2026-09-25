@@ -20,7 +20,10 @@ const { validateEnvironment } = require('./utils/env-validator');
 // ---------------------------------------------------------------------------
 // Validate required environment variables before starting
 // ---------------------------------------------------------------------------
-validateEnvironment();
+// Vercel loads this module as a serverless handler. It must stay importable even
+// before secrets are configured so /health can report the missing settings.
+const isVercel = Boolean(process.env.VERCEL);
+if (!isVercel) validateEnvironment();
 
 // ---------------------------------------------------------------------------
 // Express app setup
@@ -55,6 +58,16 @@ app.use(limiter);
 app.use('/health', healthRouter);
 app.use('/webhook', webhookRouter);
 
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    service: 'pr-pilot-server',
+    status: 'ok',
+    health: '/health',
+    readiness: '/health/ready',
+    webhook: '/webhook'
+  });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
@@ -69,31 +82,22 @@ app.use((err, req, res, _next) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const HOST = process.env.HOST || '0.0.0.0';
-
-const server = app.listen(PORT, HOST, () => {
-  logger.info(`PR Pilot webhook server listening on ${HOST}:${PORT}`);
-});
-
-// Expose server close for test teardown
-app.closeServer = () => server.close();
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received — shutting down gracefully...');
-  server.close(() => {
-    logger.info('Server closed.');
-    process.exit(0);
+if (!isVercel) {
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+  const HOST = process.env.HOST || '0.0.0.0';
+  const server = app.listen(PORT, HOST, () => {
+    logger.info(`PR Pilot webhook server listening on ${HOST}:${PORT}`);
   });
-});
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received — shutting down gracefully...');
-  server.close(() => {
-    logger.info('Server closed.');
-    process.exit(0);
-  });
-});
+  // Expose server close for test teardown.
+  app.closeServer = () => server.close();
+
+  // Graceful shutdown for long-running hosts.
+  process.on('SIGTERM', () => server.close(() => process.exit(0)));
+  process.on('SIGINT', () => server.close(() => process.exit(0)));
+} else {
+  // Vercel invokes the exported Express app directly; app.listen() must not run.
+  app.closeServer = () => Promise.resolve();
+}
 
 module.exports = app; // exported for testing
