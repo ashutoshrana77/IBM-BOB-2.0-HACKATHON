@@ -1,0 +1,116 @@
+# =============================================================================
+# PR Pilot — GitHub Actions Workflow
+# Triggers on pull_request events and runs the PR Pilot review.
+# =============================================================================
+
+name: PR Pilot Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
+      - develop
+
+# Prevent concurrent runs on the same PR (cancel previous run if new commit pushed)
+concurrency:
+  group: pr-pilot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # Required to post PR comments
+  issues: write          # Required for issue comment API
+
+jobs:
+  pr-pilot-review:
+    name: PR Pilot Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout with full history (required for git diff)
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Full history needed for git diff between base and head
+
+      # -----------------------------------------------------------------------
+      # 2. Set up Node.js (required for the webhook server / Bob Shell)
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # -----------------------------------------------------------------------
+      # 3. Install Bob Shell
+      # -----------------------------------------------------------------------
+      - name: Install Bob Shell
+        run: npm install -g @ibm/bob-shell
+        continue-on-error: false
+
+      # -----------------------------------------------------------------------
+      # 4. Verify Bob Shell installation
+      # -----------------------------------------------------------------------
+      - name: Verify Bob Shell
+        run: bob --version
+
+      # -----------------------------------------------------------------------
+      # 5. Make scripts executable
+      # -----------------------------------------------------------------------
+      - name: Make scripts executable
+        run: |
+          chmod +x ./scripts/review.sh
+          chmod +x ./scripts/post-comment.sh
+
+      # -----------------------------------------------------------------------
+      # 6. Extract PR metadata
+      # -----------------------------------------------------------------------
+      - name: Extract PR metadata
+        id: pr-meta
+        run: |
+          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          echo "base_sha=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+          echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          echo "pr_title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # 7. Run PR Pilot review
+      # -----------------------------------------------------------------------
+      - name: Run PR Pilot Review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          BOB_API_KEY: ${{ secrets.BOB_API_KEY }}
+          PR_PILOT_DEBUG: "0"
+        run: |
+          ./scripts/review.sh \
+            "${{ steps.pr-meta.outputs.pr_number }}" \
+            "${{ steps.pr-meta.outputs.base_sha }}" \
+            "${{ steps.pr-meta.outputs.head_sha }}"
+
+      # -----------------------------------------------------------------------
+      # 8. Upload review artifact (for debugging / audit trail)
+      # -----------------------------------------------------------------------
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-pilot-review-${{ steps.pr-meta.outputs.pr_number }}
+          path: .pr-pilot-work/review-${{ steps.pr-meta.outputs.pr_number }}.md
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      # 9. Fail the CI check if critical findings were detected
+      #    (review.sh exits with code 1 when critical findings exist)
+      # -----------------------------------------------------------------------
+      - name: Check for critical findings
+        if: failure() && steps.review.outcome == 'failure'
+        run: |
+          echo "::error::PR Pilot detected CRITICAL findings. Review the PR comment and address all critical issues before merging."
+          exit 1
