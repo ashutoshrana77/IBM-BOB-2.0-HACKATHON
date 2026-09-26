@@ -54,6 +54,7 @@ mkdir -p "${WORK_DIR}"
 DIFF_FILE="${WORK_DIR}/pr-${PR_NUMBER}.diff"
 PROMPT_FILE="${WORK_DIR}/prompt-${PR_NUMBER}.md"
 OUTPUT_FILE="${WORK_DIR}/review-${PR_NUMBER}.md"
+BOB_RESULT_FILE="${WORK_DIR}/bob-result-${PR_NUMBER}.json"
 
 # ---------------------------------------------------------------------------
 # Step 1: Generate the diff
@@ -151,17 +152,40 @@ echo "[PR Pilot] Running Bob Shell review (pr-reviewer mode)..."
 # Set the working directory to the repo root so Bob can use context mentions
 cd "${PROJECT_ROOT}"
 
-BOB_RUN_ARGS=(run --mode pr-reviewer --disable-subagents --disable-mcp --trust --accept-license)
+BOB_RUN_ARGS=(run --format json --mode pr-reviewer --disable-subagents --disable-mcp --trust --accept-license)
 if [ -n "${BOB_TEAM_ID:-}" ]; then
   BOB_RUN_ARGS+=(--team-id "${BOB_TEAM_ID}")
 fi
 
 if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" "${BOB_RUN_ARGS[@]}" \
-  "$(cat "${PROMPT_FILE}")" > "${OUTPUT_FILE}" 2>&1; then
-  echo "[PR Pilot] ERROR: Bob Shell review failed. Output follows:" >&2
-  echo "[PR Pilot] Output:" >&2
-  cat "${OUTPUT_FILE}" >&2
+  "$(cat "${PROMPT_FILE}")" > "${BOB_RESULT_FILE}" 2>&1; then
+  echo "[PR Pilot] ERROR: Bob Shell review failed. Check the uploaded run artifact for diagnostics." >&2
   echo "[PR Pilot] Check that BOB_API_KEY is an active Inference key. If using a General key, configure the non-secret BOB_TEAM_ID Actions variable." >&2
+  exit 1
+fi
+
+if ! python3 - "${BOB_RESULT_FILE}" "${OUTPUT_FILE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+result_path, output_path = map(Path, sys.argv[1:])
+try:
+    result = json.loads(result_path.read_text())
+except (OSError, json.JSONDecodeError) as exc:
+    print(f"[PR Pilot] ERROR: Bob Shell did not return valid JSON: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+message = result.get("last_message", "") if isinstance(result, dict) else ""
+status = result.get("status", "unknown") if isinstance(result, dict) else "invalid-response"
+if status != "success" or not isinstance(message, str) or not message.strip():
+    print(f"[PR Pilot] ERROR: Bob Shell returned no successful review (status={status}).", file=sys.stderr)
+    raise SystemExit(1)
+
+output_path.write_text(message.strip() + "\n")
+PY
+then
+  echo "[PR Pilot] ERROR: Review output was empty or malformed; no GitHub comment was posted." >&2
   exit 1
 fi
 

@@ -233,7 +233,7 @@ GitHub Actions workflow OR webhook server
   1. git diff → .pr-pilot-work/pr-<N>.diff                           │
   2. Fetch PR title + description via GitHub API                      │
   3. Build prompt from prompts/main-agent.md                         │
-  4. bob run --mode pr-reviewer --disable-subagents --disable-mcp     │
+  4. bob run --format json --mode pr-reviewer                         │
         │                                                             │
         ▼                                                             │
   IBM Bob 2.0 (pr-reviewer mode)                                     │
