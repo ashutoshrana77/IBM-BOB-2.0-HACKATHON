@@ -133,6 +133,8 @@ if [ "${PR_PILOT_DEBUG:-0}" = "1" ]; then
 fi
 
 PROMPT_BYTES=$(wc -c < "${PROMPT_FILE}")
+PROMPT_SHA256=$(sha256sum "${PROMPT_FILE}" | cut -d' ' -f1)
+echo "[PR Pilot] Prompt bytes: ${PROMPT_BYTES}; SHA-256: ${PROMPT_SHA256}"
 if [ "${PROMPT_BYTES}" -eq 0 ]; then
   echo "[PR Pilot] ERROR: Generated review prompt is empty." >&2
   exit 1
