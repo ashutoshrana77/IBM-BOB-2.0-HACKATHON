@@ -2,7 +2,7 @@
 
 **AI Co-Pilot for Faster, Safer Code Reviews — Powered by IBM Bob 2.0**
 
-PR Pilot sits between your GitHub repository and your team's review process. Every time a pull request is opened or updated, it spawns five specialised subagents in parallel (logic, tests, security, style, docs), synthesises the findings, and posts a single structured review comment within minutes.
+PR Pilot sits between your GitHub repository and your team's review process. On pull-request activity, a read-only IBM Bob review checks correctness, tests, security, style, and documentation, then posts one structured review comment.
 
 ---
 
@@ -22,7 +22,7 @@ pr-pilot/
 │   └── workflows/
 │       └── pr-pilot.yml           ← GitHub Actions workflow
 ├── prompts/
-│   ├── main-agent.md              ← master orchestration prompt
+│   ├── main-agent.md              ← single-pass review prompt
 │   ├── logic-subagent.md          ← logic & correctness subagent
 │   ├── test-subagent.md           ← test coverage subagent
 │   ├── security-subagent.md       ← security vulnerability subagent
@@ -71,7 +71,7 @@ pr-pilot/
 | Tool | Version | Purpose |
 |------|---------|---------|
 | IBM Bob Shell | latest | Runs AI-powered reviews |
-| Node.js | ≥ 18 | Webhook server |
+| Node.js | ≥ 24 for Bob Shell; ≥ 18 for webhook server | Runtime |
 | Bash | any | CI scripts |
 | Java | 17 | Sample Spring Boot app |
 | Maven | ≥ 3.9 | Build sample app |
@@ -118,6 +118,8 @@ Add these secrets to your GitHub repository (Settings → Secrets and variables 
 | `BOB_API_KEY` | IBM Bob Shell API key with **Inference** scope |
 
 The `GITHUB_TOKEN` secret is automatically provided by GitHub Actions.
+
+An **Inference** key is recommended and does not need additional context. If using a **General** Bob API key instead, add the non-secret `BOB_TEAM_ID` under **Settings → Secrets and variables → Actions → Variables**; Bob requires a team ID for General keys.
 
 Add `BOB_API_KEY` under **Settings → Secrets and variables → Actions → New repository secret**. Without it, the workflow stops with a clear setup error before attempting a review. You can also run **PR Pilot Review** manually from the Actions tab by entering an open pull request number.
 
@@ -231,19 +233,13 @@ GitHub Actions workflow OR webhook server
   1. git diff → .pr-pilot-work/pr-<N>.diff                           │
   2. Fetch PR title + description via GitHub API                      │
   3. Build prompt from prompts/main-agent.md                         │
-  4. bob --chat-mode=pr-reviewer --print "<prompt>"                  │
+  4. bob run --mode pr-reviewer --disable-subagents --disable-mcp     │
         │                                                             │
         ▼                                                             │
   IBM Bob 2.0 (pr-reviewer mode)                                     │
-  1. Activates pr-pilot skill                                        │
-  2. Reads design doc (if provided)                                  │
-  3. Spawns 5 subagents IN PARALLEL:                                 │
-     ├── Logic subagent                                              │
-     ├── Test coverage subagent                                      │
-     ├── Security subagent                                           │
-     ├── Style subagent                                              │
-     └── Docs subagent                                               │
-  4. Merges findings into structured Markdown report                 │
+  1. Reviews correctness, tests, security, style, and docs           │
+  2. Uses read-only file inspection when relevant                    │
+  3. Produces one structured Markdown report                          │
         │                                                             │
         ▼                                                             │
   post-comment.sh                                                     │

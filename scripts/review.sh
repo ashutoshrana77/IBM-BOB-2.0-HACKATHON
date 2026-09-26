@@ -148,18 +148,20 @@ fi
 # Step 4: Run Bob Shell in non-interactive (pr-reviewer) mode
 # ---------------------------------------------------------------------------
 echo "[PR Pilot] Running Bob Shell review (pr-reviewer mode)..."
-
 # Set the working directory to the repo root so Bob can use context mentions
 cd "${PROJECT_ROOT}"
 
-"${BOB_CMD}" --accept-license >/dev/null
+BOB_RUN_ARGS=(run --mode pr-reviewer --disable-subagents --disable-mcp --trust --accept-license)
+if [ -n "${BOB_TEAM_ID:-}" ]; then
+  BOB_RUN_ARGS+=(--team-id "${BOB_TEAM_ID}")
+fi
 
-if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" run --mode pr-reviewer \
-  --disable-subagents --disable-mcp --log-level debug --trust \
+if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" "${BOB_RUN_ARGS[@]}" \
   "$(cat "${PROMPT_FILE}")" > "${OUTPUT_FILE}" 2>&1; then
   echo "[PR Pilot] ERROR: Bob Shell review failed. Output follows:" >&2
   echo "[PR Pilot] Output:" >&2
   cat "${OUTPUT_FILE}" >&2
+  echo "[PR Pilot] Check that BOB_API_KEY is an active Inference key. If using a General key, configure the non-secret BOB_TEAM_ID Actions variable." >&2
   exit 1
 fi
 
