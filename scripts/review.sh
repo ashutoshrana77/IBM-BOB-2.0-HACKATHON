@@ -154,7 +154,8 @@ cd "${PROJECT_ROOT}"
 
 "${BOB_CMD}" --accept-license >/dev/null
 
-if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" run --mode pr-reviewer --trust \
+if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" run --mode pr-reviewer \
+  --disable-subagents --disable-mcp --log-level debug --trust \
   "$(cat "${PROMPT_FILE}")" > "${OUTPUT_FILE}" 2>&1; then
   echo "[PR Pilot] ERROR: Bob Shell review failed. Output follows:" >&2
   echo "[PR Pilot] Output:" >&2
