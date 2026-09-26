@@ -136,13 +136,3 @@ jobs:
           name: pr-pilot-review-${{ steps.pr-meta.outputs.pr_number }}
           path: .pr-pilot-work/review-${{ steps.pr-meta.outputs.pr_number }}.md
           retention-days: 30
-
-      # -----------------------------------------------------------------------
-      # 10. Fail the CI check if critical findings were detected
-      #    (review.sh exits with code 1 when critical findings exist)
-      # -----------------------------------------------------------------------
-      - name: Check for critical findings
-        if: failure() && steps.review.outcome == 'failure'
-        run: |
-          echo "::error::PR Pilot detected CRITICAL findings. Review the PR comment and address all critical issues before merging."
-          exit 1

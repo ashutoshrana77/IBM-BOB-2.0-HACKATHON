@@ -132,6 +132,16 @@ if [ "${PR_PILOT_DEBUG:-0}" = "1" ]; then
   echo "[PR Pilot] DEBUG: Prompt size: $(wc -l < "${PROMPT_FILE}") lines"
 fi
 
+PROMPT_BYTES=$(wc -c < "${PROMPT_FILE}")
+if [ "${PROMPT_BYTES}" -eq 0 ]; then
+  echo "[PR Pilot] ERROR: Generated review prompt is empty." >&2
+  exit 1
+fi
+if [ "${PROMPT_BYTES}" -gt 100000 ]; then
+  echo "[PR Pilot] ERROR: Generated review prompt is ${PROMPT_BYTES} bytes; split the PR so the prompt stays below 100000 bytes." >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Step 4: Run Bob Shell in non-interactive (pr-reviewer) mode
 # ---------------------------------------------------------------------------
@@ -143,7 +153,7 @@ cd "${PROJECT_ROOT}"
 "${BOB_CMD}" --accept-license >/dev/null
 
 if ! env -u GITHUB_TOKEN -u GH_TOKEN "${BOB_CMD}" run --mode pr-reviewer --trust \
-  < "${PROMPT_FILE}" > "${OUTPUT_FILE}" 2>&1; then
+  "$(cat "${PROMPT_FILE}")" > "${OUTPUT_FILE}" 2>&1; then
   echo "[PR Pilot] ERROR: Bob Shell review failed. Output follows:" >&2
   echo "[PR Pilot] Output:" >&2
   cat "${OUTPUT_FILE}" >&2
